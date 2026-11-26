@@ -1,6 +1,7 @@
 const app = document.querySelector('#app');
 
 app.innerHTML = `
+  <h1>フォーム試験</h1>
   <form>
     <label for="name">名前</label>
     <input id="name" name="name" type="text">
