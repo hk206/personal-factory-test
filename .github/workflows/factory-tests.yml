@@ -1,5 +1,7 @@
 name: Factory acceptance tests
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
 permissions:
   contents: read
 jobs:
@@ -9,6 +11,8 @@ jobs:
     timeout-minutes: 30
     outputs:
       e2e: ${{ steps.e2e.outcome }}
+      regression: ${{ steps.regression.outcome }}
+      proof: ${{ steps.regression.outputs.summary }}
       cases: ${{ steps.e2e.outputs.cases }}
       evidence: ${{ steps.upload.outputs.artifact-url }}
     steps:
@@ -16,12 +20,18 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - run: npm ci
       - run: npx --no-install playwright install --with-deps chromium
       - id: e2e
         env:
           PLAYWRIGHT_HTML_OPEN: never
         run: npx --no-install playwright test --reporter=html,./tests/acceptance-reporter.cjs
+      - id: regression
+        if: startsWith(github.event.pull_request.title, '[bug]')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 tests/regression-proof.py "$BASE_SHA"
       - id: upload
         if: always() && steps.e2e.outcome != 'skipped'
         uses: actions/upload-artifact@v4
@@ -38,6 +48,8 @@ jobs:
     steps:
       - uses: actions/github-script@v7
         env:
+          REGRESSION: ${{ needs.tests.outputs.regression }}
+          PROOF: ${{ needs.tests.outputs.proof }}
           CASES: ${{ needs.tests.outputs.cases }}
           E2E: ${{ needs.tests.outputs.e2e }}
           EVIDENCE: ${{ needs.tests.outputs.evidence }}
@@ -52,6 +64,7 @@ jobs:
               `- ジョブ全体: ${process.env.RESULT}`,
               `- Playwright E2E: ${process.env.E2E || '未実施'}`,
               `- [実行ログ](${log})`,
+              ...(pr.title.toLowerCase().startsWith('[bug]') ? [`- 回帰検証: ${process.env.PROOF || process.env.REGRESSION || '未実施'}`] : []),
               process.env.CASES || '- 条件別結果未取得',
               process.env.EVIDENCE ? `- [シナリオ・操作別スクリーンショット付きレポート](${process.env.EVIDENCE})` : '- 画像レポート未取得',
             ].join('\n');
