@@ -9,6 +9,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       e2e: ${{ steps.e2e.outcome }}
+      cases: ${{ steps.e2e.outputs.cases }}
       evidence: ${{ steps.upload.outputs.artifact-url }}
     steps:
       - uses: actions/checkout@v5
@@ -20,7 +21,7 @@ jobs:
       - id: e2e
         env:
           PLAYWRIGHT_HTML_OPEN: never
-        run: npx --no-install playwright test --reporter=html
+        run: npx --no-install playwright test --reporter=html,./tests/acceptance-reporter.cjs
       - id: upload
         if: always() && steps.e2e.outcome != 'skipped'
         uses: actions/upload-artifact@v4
@@ -37,6 +38,7 @@ jobs:
     steps:
       - uses: actions/github-script@v7
         env:
+          CASES: ${{ needs.tests.outputs.cases }}
           E2E: ${{ needs.tests.outputs.e2e }}
           EVIDENCE: ${{ needs.tests.outputs.evidence }}
           RESULT: ${{ needs.tests.result }}
@@ -50,6 +52,7 @@ jobs:
               `- ジョブ全体: ${process.env.RESULT}`,
               `- Playwright E2E: ${process.env.E2E || '未実施'}`,
               `- [実行ログ](${log})`,
+              process.env.CASES || '- 条件別結果未取得',
               process.env.EVIDENCE ? `- [シナリオ・操作別スクリーンショット付きレポート](${process.env.EVIDENCE})` : '- 画像レポート未取得',
             ].join('\n');
             await github.rest.issues.createComment({owner, repo, issue_number: pr.number, body});
