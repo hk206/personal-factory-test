@@ -1,0 +1,10 @@
+{
+  "name": "personal-factory-test",
+  "private": true,
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}

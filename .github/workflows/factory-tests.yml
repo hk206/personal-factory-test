@@ -1,0 +1,55 @@
+name: Factory acceptance tests
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  tests:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      e2e: ${{ steps.e2e.outcome }}
+      evidence: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chromium
+      - id: e2e
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+        run: npx --no-install playwright test --reporter=html
+      - id: upload
+        if: always() && steps.e2e.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: playwright-report/
+          if-no-files-found: error
+  report:
+    if: always() && needs.tests.result != 'skipped'
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          E2E: ${{ needs.tests.outputs.e2e }}
+          EVIDENCE: ${{ needs.tests.outputs.evidence }}
+          RESULT: ${{ needs.tests.result }}
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const pr = context.payload.pull_request;
+            const log = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
+            const body = [
+              '## CIテスト結果', `対象コミット: \`${pr.head.sha}\``,
+              `- ジョブ全体: ${process.env.RESULT}`,
+              `- Playwright E2E: ${process.env.E2E || '未実施'}`,
+              `- [実行ログ](${log})`,
+              process.env.EVIDENCE ? `- [シナリオ・操作別スクリーンショット付きレポート](${process.env.EVIDENCE})` : '- 画像レポート未取得',
+            ].join('\n');
+            await github.rest.issues.createComment({owner, repo, issue_number: pr.number, body});
